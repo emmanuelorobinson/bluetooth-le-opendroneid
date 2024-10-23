@@ -128,7 +128,7 @@ class DeviceScanner(
             setTimeoutForStopScanning()
             Logger.debug(TAG, "Start scanning.")
             isScanning = true
-            bluetoothLeScanner?.startScan(scanFilters, scanSettings, scanCallback)
+            bluetoothLeScanner?.startScan(newScanFilters, newScanSettings, scanCallback)
             if (showDialog) {
                 dialogHandler = Handler(Looper.getMainLooper())
                 showDeviceList()
