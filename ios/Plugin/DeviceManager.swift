@@ -21,6 +21,9 @@ class DeviceManager: NSObject, CBCentralManagerDelegate {
     private var shouldShowDeviceList = false
     private var allowDuplicates = false
 
+    static let serviceUUID = CBUUID(string: "0000fffa-0000-1000-8000-00805f9b34fb")
+    static let odidAdCode: [UInt8] = [ 0x0D ]
+
     init(_ viewController: UIViewController?, _ displayStrings: [String: String], _ callback: @escaping Callback) {
         super.init()
         self.viewController = viewController
@@ -106,7 +109,7 @@ class DeviceManager: NSObject, CBCentralManagerDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + scanDuration!, execute: self.stopScanWorkItem!)
             }
             self.centralManager.scanForPeripherals(
-                withServices: serviceUUIDs,
+                withServices: [DeviceManager.serviceUUID],
                 options: [CBCentralManagerScanOptionAllowDuplicatesKey: allowDuplicates]
             )
 

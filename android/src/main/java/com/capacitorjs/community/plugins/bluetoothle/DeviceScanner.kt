@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -13,6 +14,9 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.ArrayAdapter
 import com.getcapacitor.Logger
+import android.os.Build
+import android.os.ParcelUuid
+import java.util.UUID
 
 
 class ScanResponse(
@@ -85,10 +89,38 @@ class DeviceScanner(
         callback: (ScanResponse) -> Unit,
         scanResultCallback: ((ScanResult) -> Unit)?
     ) {
+
+        val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val bluetoothAdapter = bluetoothManager?.adapter
+
+        val serviceUuid = UUID.fromString("0000fffa-0000-1000-8000-00805f9b34fb")
+        val servicePuuid = ParcelUuid(serviceUuid)
+        val openDroneIdAdCode = byteArrayOf(0x0D)
+
         this.savedCallback = callback
         this.scanResultCallback = scanResultCallback
         this.allowDuplicates = allowDuplicates
         this.namePrefix = namePrefix
+
+        val builder = ScanFilter.Builder()
+        builder.setServiceData(servicePuuid, openDroneIdAdCode)
+
+        // create new scanFilters as the original list is immutable and do listOf(builder.build())
+        var newScanFilters = listOf(builder.build())
+
+        var scanSettings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        if (bluetoothAdapter != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bluetoothAdapter.isLeCodedPhySupported && bluetoothAdapter.isLeExtendedAdvertisingSupported) {
+                newScanSettings = ScanSettings.Builder()
+                    .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                    .setLegacy(false)
+                    .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+                    .build()
+            }
+        }
 
         deviceStrings.clear()
         deviceList.clear()
