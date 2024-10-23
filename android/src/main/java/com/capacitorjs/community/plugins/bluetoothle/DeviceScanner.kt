@@ -106,9 +106,9 @@ class DeviceScanner(
         builder.setServiceData(servicePuuid, openDroneIdAdCode)
 
         // create new scanFilters as the original list is immutable and do listOf(builder.build())
-        var newScanFilters = listOf(builder.build())
+        val newScanFilters = listOf(builder.build())
 
-        var scanSettings = ScanSettings.Builder()
+        var newScanSettings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
