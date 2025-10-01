@@ -125,6 +125,9 @@ export class BluetoothLeWeb extends WebPlugin implements BluetoothLePlugin {
     const deviceId = event.device.id;
     this.deviceMap.set(deviceId, event.device);
     const isNew = !this.discoveredDevices.has(deviceId);
+    if (!this.matchesServiceDataFilters(event)) {
+      return;
+    }
     if (isNew || this.requestBleDeviceOptions?.allowDuplicates) {
       this.discoveredDevices.set(deviceId, true);
       const device = this.getBleDevice(event.device);
@@ -378,10 +381,91 @@ export class BluetoothLeWeb extends WebPlugin implements BluetoothLePlugin {
     }
     for (const manufacturerData of options?.manufacturerData ?? []) {
       filters.push({
-        manufacturerData: [manufacturerData],
+        manufacturerData: [
+          {
+            companyIdentifier: manufacturerData.companyIdentifier,
+            dataPrefix: manufacturerData.dataPrefix ? this.toArrayBuffer(manufacturerData.dataPrefix) : undefined,
+            mask: manufacturerData.mask ? this.toArrayBuffer(manufacturerData.mask) : undefined,
+          },
+        ],
       });
     }
     return filters;
+  }
+
+  private matchesServiceDataFilters(event: BluetoothAdvertisingEvent): boolean {
+    const filters = this.requestBleDeviceOptions?.serviceData;
+    if (!filters || filters.length === 0) {
+      return true;
+    }
+
+    if (!event.serviceData || event.serviceData.size === 0) {
+      return false;
+    }
+
+    for (const filter of filters) {
+      const targetUuid = filter.service;
+      const entries = Array.from(event.serviceData.entries());
+      for (const [key, dataView] of entries) {
+        if (webUUIDToString(key) !== targetUuid) {
+          continue;
+        }
+
+        const payload = this.dataViewToUint8Array(dataView);
+        const filterData = this.ensureUint8Array(filter.data);
+        if (payload.length < filterData.length) {
+          continue;
+        }
+
+        if (filter.mask) {
+          const mask = this.ensureUint8Array(filter.mask);
+          if (mask.length !== filterData.length) {
+            continue;
+          }
+          let matches = true;
+          for (let i = 0; i < filterData.length; i++) {
+            if ((payload[i] & mask[i]) !== (filterData[i] & mask[i])) {
+              matches = false;
+              break;
+            }
+          }
+          if (matches) {
+            return true;
+          }
+        } else if (this.startsWith(payload, filterData)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private dataViewToUint8Array(dataView: DataView): Uint8Array {
+    return new Uint8Array(dataView.buffer.slice(dataView.byteOffset, dataView.byteOffset + dataView.byteLength));
+  }
+
+  private ensureUint8Array(value: Uint8Array | number[] | DataView): Uint8Array {
+    if (value instanceof Uint8Array) {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return Uint8Array.from(value);
+    }
+    return this.dataViewToUint8Array(value);
+  }
+
+  private startsWith(payload: Uint8Array, prefix: Uint8Array): boolean {
+    for (let i = 0; i < prefix.length; i++) {
+      if (payload[i] !== prefix[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private toArrayBuffer(array: Uint8Array): ArrayBuffer {
+    return array.buffer.slice(array.byteOffset, array.byteOffset + array.byteLength);
   }
 
   private getDeviceFromMap(deviceId: string): BluetoothDevice {

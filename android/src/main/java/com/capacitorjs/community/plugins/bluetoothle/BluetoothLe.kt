@@ -39,6 +39,8 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
 
 
 @SuppressLint("MissingPermission")
@@ -811,10 +813,97 @@ class BluetoothLe : Plugin() {
         val filters: ArrayList<ScanFilter> = ArrayList()
 
         val services = (call.getArray("services", JSArray()) as JSArray).toList<String>()
-        val manufacturerDataArray = call.getArray("manufacturerData", JSArray())
+    val manufacturerDataArray = call.getArray("manufacturerData", JSArray())
+    val serviceDataArray = call.getArray("serviceData", JSArray())
         val name = call.getString("name", null)
 
         try {
+            fun parseByteArray(value: Any?): ByteArray? {
+                if (value === JSONObject.NULL) {
+                    return null
+                }
+                return when (value) {
+                    null -> null
+                    is ByteArray -> value
+                    is JSONObject -> {
+                        val byteLength = value.length()
+                        ByteArray(byteLength).apply {
+                            for (idx in 0 until byteLength) {
+                                val key = idx.toString()
+                                this[idx] = (value.getInt(key) and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is JSONArray -> {
+                        val byteLength = value.length()
+                        ByteArray(byteLength).apply {
+                            for (idx in 0 until byteLength) {
+                                this[idx] = (value.getInt(idx) and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is IntArray -> {
+                        ByteArray(value.size).apply {
+                            value.forEachIndexed { idx, element ->
+                                this[idx] = (element and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is LongArray -> {
+                        ByteArray(value.size).apply {
+                            value.forEachIndexed { idx, element ->
+                                this[idx] = (element.toInt() and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is ShortArray -> {
+                        ByteArray(value.size).apply {
+                            value.forEachIndexed { idx, element ->
+                                this[idx] = (element.toInt() and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is DoubleArray -> {
+                        ByteArray(value.size).apply {
+                            value.forEachIndexed { idx, element ->
+                                this[idx] = (element.toInt() and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is FloatArray -> {
+                        ByteArray(value.size).apply {
+                            value.forEachIndexed { idx, element ->
+                                this[idx] = (element.toInt() and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is Collection<*> -> {
+                        val list = value.toList()
+                        ByteArray(list.size).apply {
+                            list.forEachIndexed { idx, element ->
+                                val number = element as? Number
+                                if (number == null) {
+                                    throw IllegalArgumentException("Invalid byte array element")
+                                }
+                                this[idx] = (number.toInt() and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    is Array<*> -> {
+                        ByteArray(value.size).apply {
+                            value.forEachIndexed { idx, element ->
+                                val number = element as? Number
+                                if (number == null) {
+                                    throw IllegalArgumentException("Invalid byte array element")
+                                }
+                                this[idx] = (number.toInt() and 0xFF).toByte()
+                            }
+                        }
+                    }
+                    else -> null
+                }
+            }
+
             // Create filters based on services
             for (service in services) {
                 val filter = ScanFilter.Builder()
@@ -831,35 +920,21 @@ class BluetoothLe : Plugin() {
                     val manufacturerDataObject = it.getJSONObject(i)
 
                     val companyIdentifier = manufacturerDataObject.getInt("companyIdentifier")
-
-                    val dataPrefix = if (manufacturerDataObject.has("dataPrefix")) {
-                        val dataPrefixObject = manufacturerDataObject.getJSONObject("dataPrefix")
-                        val byteLength = dataPrefixObject.length()
-
-                        ByteArray(byteLength).apply {
-                            for (idx in 0 until byteLength) {
-                                val key = idx.toString()
-                                this[idx] = (dataPrefixObject.getInt(key) and 0xFF).toByte()
-                            }
-                        }
-                    } else null
-
-
-                    val mask = if (manufacturerDataObject.has("mask")) {
-                        val maskObject = manufacturerDataObject.getJSONObject("mask")
-                        val byteLength = maskObject.length()
-
-                        ByteArray(byteLength).apply {
-                            for (idx in 0 until byteLength) {
-                                val key = idx.toString()
-                                this[idx] = (maskObject.getInt(key) and 0xFF).toByte()
-                            }
-                        }
-                    } else null
+                    val dataPrefix = parseByteArray(manufacturerDataObject.opt("dataPrefix"))
+                    val rawMask = manufacturerDataObject.opt("mask")
+                    val mask = parseByteArray(rawMask)
+                    if (manufacturerDataObject.has("mask") && rawMask != null && mask == null) {
+                        call.reject("Invalid manufacturerData mask provided.")
+                        return null
+                    }
 
                     val filterBuilder = ScanFilter.Builder()
 
                     if (dataPrefix != null && mask != null) {
+                        if (dataPrefix.size != mask.size) {
+                            call.reject("Manufacturer mask length must match dataPrefix length.")
+                            return null
+                        }
                         filterBuilder.setManufacturerData(companyIdentifier, dataPrefix, mask)
                     } else if (dataPrefix != null) {
                         filterBuilder.setManufacturerData(companyIdentifier, dataPrefix)
@@ -873,6 +948,55 @@ class BluetoothLe : Plugin() {
                         filterBuilder.setDeviceName(name)
                     }
 
+                    filters.add(filterBuilder.build())
+                }
+            }
+
+            serviceDataArray?.let {
+                for (i in 0 until it.length()) {
+                    val serviceDataObject = it.getJSONObject(i)
+
+                    if (!serviceDataObject.has("service")) {
+                        call.reject("Service UUID required for serviceData filter.")
+                        return null
+                    }
+
+                    val serviceUuidString = serviceDataObject.getString("service")
+                    val serviceParcelUuid = ParcelUuid.fromString(serviceUuidString)
+
+                    val dataArray = parseByteArray(
+                        serviceDataObject.opt("data") ?: serviceDataObject.opt("dataPrefix")
+                    )
+                    if (dataArray == null) {
+                        call.reject("data is required when specifying serviceData.")
+                        return null
+                    }
+                    if (dataArray.isEmpty()) {
+                        call.reject("serviceData data must contain at least one byte.")
+                        return null
+                    }
+
+                    val rawMask = serviceDataObject.opt("mask")
+                    val maskArray = parseByteArray(rawMask)
+                    if (serviceDataObject.has("mask") && rawMask != null && maskArray == null) {
+                        call.reject("Invalid serviceData mask provided.")
+                        return null
+                    }
+                    if (maskArray != null && maskArray.size != dataArray.size) {
+                        call.reject("serviceData mask length must match data length.")
+                        return null
+                    }
+
+                    val filterBuilder = ScanFilter.Builder()
+                    filterBuilder.setServiceUuid(serviceParcelUuid)
+                    if (maskArray != null) {
+                        filterBuilder.setServiceData(serviceParcelUuid, dataArray, maskArray)
+                    } else {
+                        filterBuilder.setServiceData(serviceParcelUuid, dataArray)
+                    }
+                    if (name != null) {
+                        filterBuilder.setDeviceName(name)
+                    }
                     filters.add(filterBuilder.build())
                 }
             }

@@ -51,6 +51,12 @@ export interface RequestBleDeviceOptions {
    * https://developer.mozilla.org/en-US/docs/Web/API/Bluetooth/requestDevice#manufacturerdata
    */
   manufacturerData?: ManufacturerDataFilter[];
+  /**
+   * Filter devices by service data payloads.
+   * Each filter matches on the specified service UUID and an optional masked payload prefix.
+   * (Android, iOS, web manual filtering where supported)
+   */
+  serviceData?: ServiceDataFilter[];
 }
 
 /**
@@ -110,6 +116,25 @@ export interface ManufacturerDataFilter {
   /**
    * Set filter on partial manufacture data. For any bit in the mask, set it the 1 if it needs to match the one in manufacturer data, otherwise set it to 0.
    * The `mask` must have the same length of dataPrefix.
+   */
+  mask?: Uint8Array;
+}
+
+export interface ServiceDataFilter {
+  /**
+   * Service UUID to match against the advertisement payload.
+   */
+  service: string;
+
+  /**
+   * Prefix to match in the service data field.
+   * Must contain at least one byte.
+   */
+  data: Uint8Array;
+
+  /**
+   * Optional mask to apply when matching the data prefix.
+   * Must have the same length as `data` when provided.
    */
   mask?: Uint8Array;
 }

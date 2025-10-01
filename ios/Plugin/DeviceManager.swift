@@ -21,6 +21,7 @@ class DeviceManager: NSObject, CBCentralManagerDelegate {
     private var shouldShowDeviceList = false
     private var allowDuplicates = false
     private var manufacturerDataFilters: [ManufacturerDataFilter]?
+    private var serviceDataFilters: [ServiceDataFilter]?
 
     init(_ viewController: UIViewController?, _ displayStrings: [String: String], _ callback: @escaping Callback) {
         super.init()
@@ -81,6 +82,7 @@ class DeviceManager: NSObject, CBCentralManagerDelegate {
         _ name: String?,
         _ namePrefix: String?,
         _ manufacturerDataFilters: [ManufacturerDataFilter]?,
+        _ serviceDataFilters: [ServiceDataFilter]?,
         _ allowDuplicates: Bool,
         _ shouldShowDeviceList: Bool,
         _ scanDuration: Double?,
@@ -97,6 +99,7 @@ class DeviceManager: NSObject, CBCentralManagerDelegate {
             self.deviceNameFilter = name
             self.deviceNamePrefixFilter = namePrefix
             self.manufacturerDataFilters = manufacturerDataFilters
+            self.serviceDataFilters = serviceDataFilters
 
             if shouldShowDeviceList {
                 self.showDeviceList()
@@ -156,6 +159,7 @@ class DeviceManager: NSObject, CBCentralManagerDelegate {
         guard self.passesNameFilter(peripheralName: peripheral.name) else { return }
         guard self.passesNamePrefixFilter(peripheralName: peripheral.name) else { return }
         guard self.passesManufacturerDataFilter(advertisementData) else { return }
+    guard self.passesServiceDataFilter(advertisementData) else { return }
 
         let device: Device
         if self.allowDuplicates, let knownDevice = discoveredDevices.first(where: { $0.key == peripheral.identifier.uuidString })?.value {
@@ -346,6 +350,53 @@ class DeviceManager: NSObject, CBCentralManagerDelegate {
         }
 
         return false  // If none matched, return false
+    }
+
+    private func passesServiceDataFilter(_ advertisementData: [String: Any]) -> Bool {
+        guard let filters = self.serviceDataFilters, !filters.isEmpty else {
+            return true
+        }
+
+        guard let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data] else {
+            return false
+        }
+
+        for filter in filters {
+            guard let payload = serviceData.first(where: { $0.key == filter.service })?.value else {
+                continue
+            }
+
+            if payload.count < filter.data.count {
+                continue
+            }
+
+            let payloadBytes = [UInt8](payload)
+            let filterBytes = [UInt8](filter.data)
+
+            if let mask = filter.mask {
+                if mask.count != filter.data.count {
+                    continue
+                }
+                let maskBytes = [UInt8](mask)
+                var matches = true
+                for index in 0..<filterBytes.count {
+                    let payloadByte = payloadBytes[index]
+                    let maskByte = maskBytes[index]
+                    let filterByte = filterBytes[index]
+                    if (payloadByte & maskByte) != (filterByte & maskByte) {
+                        matches = false
+                        break
+                    }
+                }
+                if matches {
+                    return true
+                }
+            } else if Data(payloadBytes).starts(with: filter.data) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func resolve(_ key: String, _ value: String) {

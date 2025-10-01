@@ -13,6 +13,12 @@ struct ManufacturerDataFilter {
     let mask: Data?
 }
 
+struct ServiceDataFilter {
+    let service: CBUUID
+    let data: Data
+    let mask: Data?
+}
+
 @objc(BluetoothLe)
 public class BluetoothLe: CAPPlugin {
     typealias BleDevice = [String: Any]
@@ -117,12 +123,14 @@ public class BluetoothLe: CAPPlugin {
         let name = call.getString("name")
         let namePrefix = call.getString("namePrefix")
         let manufacturerDataFilters = self.getManufacturerDataFilters(call)
+        let serviceDataFilters = self.getServiceDataFilters(call)
 
         deviceManager.startScanning(
             serviceUUIDs,
             name,
             namePrefix,
             manufacturerDataFilters,
+            serviceDataFilters,
             false,
             true,
             30,
@@ -151,12 +159,14 @@ public class BluetoothLe: CAPPlugin {
         let namePrefix = call.getString("namePrefix")
         let allowDuplicates = call.getBool("allowDuplicates", false)
         let manufacturerDataFilters = self.getManufacturerDataFilters(call)
+        let serviceDataFilters = self.getServiceDataFilters(call)
 
         deviceManager.startScanning(
             serviceUUIDs,
             name,
             namePrefix,
             manufacturerDataFilters,
+            serviceDataFilters,
             allowDuplicates,
             false,
             nil,
@@ -545,15 +555,16 @@ public class BluetoothLe: CAPPlugin {
                 return nil
             }
 
-            let dataPrefix: Data? = {
-                guard let prefixArray = dataObject["dataPrefix"] as? [Int] else { return nil }
-                return Data(prefixArray.map { UInt8($0 & 0xFF) })
-            }()
-
-            let mask: Data? = {
-                guard let maskArray = dataObject["mask"] as? [Int] else { return nil }
-                return Data(maskArray.map { UInt8($0 & 0xFF) })
-            }()
+            guard let dataPrefix = toByteData(dataObject["dataPrefix"]) else {
+                return nil
+            }
+            let mask = toByteData(dataObject["mask"])
+            if dataObject.keys.contains("mask") && dataObject["mask"] != nil && mask == nil {
+                return nil
+            }
+            if let mask = mask, dataPrefix.count != mask.count {
+                return nil
+            }
 
             let manufacturerFilter = ManufacturerDataFilter(
                 companyIdentifier: companyIdentifier,
@@ -565,6 +576,71 @@ public class BluetoothLe: CAPPlugin {
         }
 
         return manufacturerDataFilters
+    }
+
+    private func getServiceDataFilters(_ call: CAPPluginCall) -> [ServiceDataFilter]? {
+        guard let serviceDataArray = call.getArray("serviceData") else {
+            return nil
+        }
+
+        var serviceDataFilters: [ServiceDataFilter] = []
+
+        for index in 0..<serviceDataArray.count {
+            guard let dataObject = serviceDataArray[index] as? JSObject,
+                  let serviceString = dataObject["service"] as? String else {
+                return nil
+            }
+
+            let serviceUUID = CBUUID(string: serviceString)
+
+            let data = toByteData(dataObject["data"]) ?? toByteData(dataObject["dataPrefix"])
+            guard let data = data, !data.isEmpty else {
+                return nil
+            }
+
+            let mask = toByteData(dataObject["mask"])
+            if dataObject.keys.contains("mask") && dataObject["mask"] != nil && mask == nil {
+                return nil
+            }
+            if let mask = mask, mask.count != data.count {
+                return nil
+            }
+
+            serviceDataFilters.append(ServiceDataFilter(service: serviceUUID, data: data, mask: mask))
+        }
+
+        return serviceDataFilters
+    }
+
+    private func toByteData(_ value: Any?) -> Data? {
+        if value == nil {
+            return nil
+        }
+        if let data = value as? Data {
+            return data
+        }
+        if let dict = value as? [String: Any] {
+            let keys = dict.keys.compactMap { Int($0) }.sorted()
+            var bytes: [UInt8] = []
+            for key in keys {
+                guard let number = dict[String(key)] as? NSNumber else {
+                    return nil
+                }
+                bytes.append(number.uint8Value)
+            }
+            return Data(bytes)
+        }
+        if let array = value as? [Any] {
+            var bytes: [UInt8] = []
+            for element in array {
+                guard let number = element as? NSNumber else {
+                    return nil
+                }
+                bytes.append(number.uint8Value)
+            }
+            return Data(bytes)
+        }
+        return nil
     }
 
     private func getDevice(_ call: CAPPluginCall, checkConnection: Bool = true) -> Device? {

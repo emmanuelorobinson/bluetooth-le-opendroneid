@@ -178,6 +178,60 @@ describe('BleClient', () => {
     expect(BluetoothLe.requestLEScan).toHaveBeenCalledTimes(1);
   });
 
+  it('should reject mismatched serviceData mask length', async () => {
+    const mockCallback = jest.fn();
+    const mockScanListener = {
+      remove: jest.fn(),
+    };
+    (BluetoothLe.addListener as jest.Mock).mockReturnValue(mockScanListener);
+    await expect(
+      BleClient.requestLEScan(
+        {
+          serviceData: [
+            {
+              service,
+              data: new Uint8Array([0x0d]),
+              mask: new Uint8Array([0xff, 0x00]),
+            },
+          ],
+        },
+        mockCallback,
+      ),
+    ).rejects.toThrow('mask length must match data length');
+  });
+
+  it('should normalize serviceData filters', async () => {
+    const mockCallback = jest.fn();
+    const mockScanListener = {
+      remove: jest.fn(),
+    };
+    (BluetoothLe.addListener as jest.Mock).mockReturnValue(mockScanListener);
+    (BluetoothLe.requestLEScan as jest.Mock).mockResolvedValue(undefined);
+
+    await BleClient.requestLEScan(
+      {
+        serviceData: [
+          {
+            service,
+            data: Uint8Array.from([0x0d]),
+          },
+        ],
+      },
+      mockCallback,
+    );
+
+    expect(BluetoothLe.requestLEScan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceData: [
+          expect.objectContaining({
+            service,
+            data: expect.any(Uint8Array),
+          }),
+        ],
+      }),
+    );
+  });
+
   it('should run stopLEScan', async () => {
     const mockCallback = jest.fn();
     const mockScanListener = {

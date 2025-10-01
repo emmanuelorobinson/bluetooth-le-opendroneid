@@ -718,7 +718,42 @@ class BleClientClass implements BleClientInterface {
     if (options.optionalServices) {
       options.optionalServices = options.optionalServices.map(parseUUID);
     }
+    if (options.serviceData) {
+      options.serviceData = options.serviceData.map((filter) => {
+        const service = parseUUID(filter.service);
+        const data = this.ensureUint8Array(filter.data);
+        const mask = filter.mask ? this.ensureUint8Array(filter.mask) : undefined;
+        if (mask && mask.length !== data.length) {
+          throw new Error('serviceData mask length must match data length.');
+        }
+        if (data.length === 0) {
+          throw new Error('serviceData data must contain at least one byte.');
+        }
+        return {
+          service,
+          data,
+          mask,
+        };
+      });
+    }
     return options;
+  }
+
+  private ensureUint8Array(value: Uint8Array | number[] | DataView): Uint8Array {
+    if (value instanceof Uint8Array) {
+      return value;
+    }
+    if (value instanceof DataView) {
+      const array = new Uint8Array(value.byteLength);
+      for (let i = 0; i < value.byteLength; i++) {
+        array[i] = value.getUint8(i);
+      }
+      return array;
+    }
+    if (Array.isArray(value)) {
+      return Uint8Array.from(value);
+    }
+    throw new Error('Unsupported byte container. Use Uint8Array, number[] or DataView.');
   }
 
   private convertValue(value?: Data): DataView {
